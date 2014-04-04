@@ -1,19 +1,18 @@
-import os
-import string
-import random
-import json
-import pysolr
+# coding=utf-8
+"""
 
+Created on 2014-04-03
+
+@author: André Baillargeon
+
+"""
+import importlib
+import json
+from collections import OrderedDict
+from django.conf import settings
 from django.http import HttpResponse
 from django.views.decorators.cache import never_cache
 from django.views.generic.detail import BaseDetailView
-from django.core.cache import cache
-from django.conf import settings
-
-from heartbeat.models import HeartbeatCache
-from heartbeat.tasks import TestTask
-
-randomval = ''.join(random.choice(string.ascii_uppercase + string.digits) for x in range(32))
 
 
 class JsonResponseMixin(object):
@@ -30,129 +29,56 @@ class JsonResponseMixin(object):
 
 class Status(JsonResponseMixin, BaseDetailView):
 
-    def __init__(self):
-        self.results = {}
-        super(Status, self).__init__()
-
-    def check_flag(self, **params):
-        """
-        Check services: flag
-        """
-        takedown = params.get('takedown', False)
-        filename = params.get('filename', '')
-        if filename and os.path.exists(filename) and '0' in open(filename).read():
-            self.results['flag'] = 'Down'
-            return False if takedown else True
-        self.results['flag'] = 'Ok'
-        return True
-
-    def check_database(self, **params):
-        """
-        Check services: database
-        """
-        takedown = params.get('takedown', False)
-        try:
-            HeartbeatCache(cache=randomval).save()
-            heartbeat = HeartbeatCache.objects.get(cache=randomval)
-            heartbeat.delete()
-            self.results['database'] = 'Ok'
-            return True
-        except Exception as e:
-            self.results['database'] = 'Down -- %s' % e
-            return False if takedown else True
-
-    def check_cache(self, **params):
-        """
-        Check services: cache
-        """
-        takedown = params.get('takedown', False)
-        cache.set('HEARTBEAT_TEST', randomval, 2)
-        if not cache.get('HEARTBEAT_TEST', 2) == randomval:
-            self.results['cache'] = 'Down'
-            return False if takedown else True
-        self.results['cache'] = 'Ok'
-        return True
-
-    def check_rabbitmq(self, **params):
-        """
-        Check services: rabbitmq
-        """
-        takedown = params.get('takedown', False)
-        try:
-            t = TestTask().delay()
-            print t.id
-            self.results['rabbitmq'] = 'Ok'
-            return True
-        except Exception as e:
-            self.results['rabbitmq'] = 'Down -- %s' % e
-            return False if takedown else True
-
-    def check_celeryd(self, **params):
-        """
-        Check services: celeryd
-        """
-        takedown = params.get('takedown', False)
-        try:
-            r = TestTask().delay(1, 1).wait()
-            if r.successful():
-                self.results['celeryd'] = 'Ok'
-                return True
-        except Exception as e:
-            self.results['celeryd'] = 'Down -- %s' % e
-            return False if takedown else True
-
-    def check_solr(self, **params):
-        """
-        Check services: solr
-        """
-        takedown = params.get('takedown', False)
-        url = params.get('url', '')
-        try:
-            solr = pysolr.Solr(url, timeout=2)
-            results = solr.search('*:*')
-            if results.hits:
-                self.results['solr'] = 'Ok'
-                return True
-        except Exception as e:
-            self.results['solr'] = 'Down -- %s' % e
-            return False if takedown else True
-
-    def get_services(self):
-        """
-        Get all services from settings
-        """
-        #TODO OrderDict
-        return getattr(settings, 'HEARTBEAT', {})
-
     def _quote(self, val):
         if isinstance(val, str):
             return '"%s"' % val
         return val
 
+    def get_services(self):
+        """
+        Get all services from settings
+        """
+        return OrderedDict(getattr(settings, 'HEARTBEAT', {}))
+
+    def load_class(self, full_class_string):
+        """
+        load load from string
+        """
+        class_data = full_class_string.split(".")
+        module_path = ".".join(class_data[:-1])
+        class_str = class_data[-1]
+        module = importlib.import_module(module_path)
+        return getattr(module, class_str)
+
     @never_cache
     def dispatch(self, request, *args, **kwargs):
         """
         returns results in json with:
-        status 503 if one of the check methods returns False
-        status 200 if all of the check methods returns True
+        status 503 if one of the perform_check returns False
+        status 200 if all of the perform_check returns True
         """
-
-        # prepare the results to display
-        for service in self.get_services().iterkeys():
-            self.results[service] = 'Not tested'
-
+        results = {}
+        error = False
         # call the validation method for each service in settings
-        for service, params in self.get_services().iteritems():
+        for service_name, params in self.get_services().iteritems():
+            print service_name, params
+            results[service_name] = 'Not tested'
+
+            # get, import and instanciate module
+            klass = params.get('class')
             try:
-                params = ', '.join(['%s=%s' % (param, self._quote(value)) for param, value in params.iteritems()])
-                print service, params
-                if not eval('self.check_%s(%s)' % (service, params)):
-                    return self.render_to_response(
-                        {'services': self.results, 'header': '503, %s failed' % service}, status=503)
-            except AttributeError:
-                self.results[service] = '%s is not a defined service you can check.' % service
+                service_module = self.load_class(klass)
+            except (ImportError, AttributeError) as e:
+                results[service_name] = str(e)
                 continue
+            service = service_module(**params)
 
+            # perform check
+            if not service.perform_check():
+                error = True
+            results[service_name] = service.msg
 
-
-        return self.render_to_response({'services': self.results, 'header': '200' })
+        if error:
+            return self.render_to_response(
+                    {'services': results, 'header': '503'}, status=503)
+        return self.render_to_response({'services': results, 'header': '200' })
