@@ -12,8 +12,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         if 'up' in args:
             try:
-                if os.path.exists(settings.HEARTBEAT_FILENAME):
-                    os.unlink(settings.HEARTBEAT_FILENAME)
+                if os.path.exists(settings.HEARTBEAT.get('flag', {}).get('filename')):
+                    os.unlink(settings.HEARTBEAT.get('flag', {}).get('filename'))
                     
                 self.stdout.write('\nThis server is now available and should start ' \
                     'receiving new requests shortly.\n')
@@ -24,7 +24,7 @@ class Command(BaseCommand):
         
         if 'down' in args:
             try:
-                open(settings.HEARTBEAT_FILENAME, 'w').write('0')
+                open(settings.HEARTBEAT.get('flag', {}).get('filename'), 'w').write('0')
                     
                 self.stdout.write('\nThis server is now flagged for maintenance and ' \
                     'should stop receiving new requests shortly.\n' \
