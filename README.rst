@@ -1,27 +1,82 @@
 A simple django app that responds to heartbeat polls.  
 
-In a cluster of load-balanced web servers, this allows you to take a server out of service gracefully, by letting your load balancer know that the server is going down before shutting down.
+In a cluster of load-balanced web servers, this allows you to take a server out of service gracefully,
+by letting your load balancer know that the server is going down before shutting down.
 
 To implement, add 'heartbeat' to INSTALLED_APPS in your Django settings file.
 
-A control file is used for signalling.  Use the following setting in your Django settings file to specify the path for the control file:
+Use the following setting in your Django settings file to specify what to check:
 
-::
-  
-    HEARTBEAT_FILENAME = '/etc/heartbeat'
-
-If this file exists and contains a 0, heartbeat will respond with a 503 to let a load balancer know to stop sending new requests to the server because the server is going down for maintenance.  
-
-To set, use eg: 
+Services to check by the loadbalancer
 ::
 
-    $ echo 0 > etc/heartbeat
+    HEARTBEAT = {
+        'flag': {
+            'class': 'heartbeat.heartbeats.Flag',  # class of your checker
+            'actions': {'takedown': True},  # actions you can implement
+            'filename': '/Users/baillaan/desktop/h.beat'  # other params you can implement
+        },
+        'database': {
+            'class': 'heartbeat.heartbeats.Db',
+            'actions': {'takedown': False},
+        },
+        'cache': {
+            'class': 'heartbeat.heartbeats.Cache',
+            'actions': {'takedown': False},
+        },
+        'solr': {
+            'class': 'myapp.heartbeats.Solr',
+            'actions': {'takedown': False, 'mail_admins': True},
+            'url': SOLR_URL,
+            'search_term': '*:*'
+        },
+    }
 
-Or you can use the Django management commands:
-::    
+HEARTBEAT['flag'] is mandatory for the heartbeat command to work. This is the initial project
+
+The others are up to you. HEARBEAT['database'] and HEARTBEAT['cache'] are also included in the module now.
+
+Check the HEARBEAT['solr'] example to make your own!
+::
+
+
+    ------------------ myapp.heartbeats.py -----------------------
+
+    import pysolr
+    from heartbeat.heartbeats import Check
+
+
+    class Solr(Check):
+        """
+        Check if *:* returns results.
+        @returns False if no results
+        """
+        def __init__(self, **params):
+            super(Solr, self).__init__(**params)
+            self.url = params.get('url')
+            self.search_term = params.get('search_term')
+
+        def perform_check(self):
+            try:
+                solr = pysolr.Solr(self.url, timeout=2)
+                results = solr.search(self.search_term)
+                if results.hits:
+                    self.msg = 'Ok'
+                    return True
+                else:
+                    self.msg = 'Fail to fetch results'
+                    return False if self.actions.get('takedown') else True
+
+
+    ------------------ myapp.heartbeats.py -----------------------
+
+
+You can use the Django management commands to set or remove a flag:
+::
 
     $ bin/django heartbeat down
     $ bin/django heartbeat up
+
 
 Used with HAProxy, your HAProxy config file might contain this:
 ::
