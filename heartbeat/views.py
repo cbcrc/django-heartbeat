@@ -8,7 +8,6 @@ Created on 2014-04-03
 """
 import importlib
 import json
-from collections import OrderedDict
 from django.conf import settings
 from django.http import HttpResponse
 from django.views.decorators.cache import never_cache
@@ -38,7 +37,7 @@ class Status(JsonResponseMixin, BaseDetailView):
         """
         Get all services from settings
         """
-        return OrderedDict(getattr(settings, 'HEARTBEAT', {}))
+        return getattr(settings, 'HEARTBEAT', {})
 
     def load_class(self, full_class_string):
         """
