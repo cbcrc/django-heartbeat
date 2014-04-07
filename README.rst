@@ -23,7 +23,7 @@ Use the following setting in your Django settings file to specify what to check:
             'actions': {'takedown': True, 'mail_admins': True},
         },
         'solr': {
-            'class': 'curio.heartbeats.Solr',
+            'class': 'myapp.heartbeats.Solr',
             'actions': {'takedown': True, 'mail_admins': True},
             'url': SOLR_URL,
             'search_term': '*:*'
@@ -43,8 +43,6 @@ The 3 default checks (flag, db and cache) supports 2 actions:
 Check the HEARBEAT['solr'] example to include project relative checks.
 ::
 
-
-    ------------------ myapp.heartbeats.py -----------------------
 
     import pysolr
     from heartbeat.heartbeats import Check
@@ -68,11 +66,10 @@ Check the HEARBEAT['solr'] example to include project relative checks.
                     self.msg = 'Ok'
                     return True
                 else:
-                    self.msg = 'Fail to fetch results'
+                    self.msg = 'Fail: Cannot fetch results'
+                    if self.actions.get('mail_admins'):
+                        mail_admins(u'Solr cannot fetch results', u'%s on host %s cannot talk to solr' % self.get_node())
                     return False if self.actions.get('takedown') else True
-
-
-    ------------------ myapp.heartbeats.py -----------------------
 
 
 You can use the Django management commands to set or remove a flag:
