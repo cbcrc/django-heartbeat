@@ -60,7 +60,6 @@ class Status(JsonResponseMixin, BaseDetailView):
         error = False
         # call the validation method for each service in settings
         for service_name, params in self.get_services().iteritems():
-            print service_name, params
             results[service_name] = 'Not tested'
 
             # get, import and instanciate module
