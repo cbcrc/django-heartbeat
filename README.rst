@@ -43,6 +43,7 @@ The 3 default checks (flag, db and cache) supports 2 actions:
 Check the HEARBEAT['solr'] example to include project relative checks.
 ::
 
+------------------ myapp.heartbeats.py -----------------------
 
     import pysolr
     from heartbeat.heartbeats import Check
@@ -70,6 +71,9 @@ Check the HEARBEAT['solr'] example to include project relative checks.
                     if self.actions.get('mail_admins'):
                         mail_admins(u'Solr cannot fetch results', u'%s on host %s cannot talk to solr' % self.get_node())
                     return False if self.actions.get('takedown') else True
+
+    ------------------ myapp.heartbeats.py -----------------------
+
 
 
 You can use the Django management commands to set or remove a flag:
